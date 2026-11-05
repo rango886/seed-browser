@@ -1,0 +1,16 @@
+{
+  "name": "promo",
+  "version": "1.0.0",
+  "description": "双击 `index.html` 用 Chrome / Edge 打开就能播放，不用起服务器。想发给别人就用 `index-single.html`（CSS / JS / 旁白全打包在一个文件里，约 3.4 MB）。1920×1080，全长约 4 分 30 秒。",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "playwright-core": "^1.64.0"
+  }
+}

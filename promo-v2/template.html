@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Recursurf · 让 AI 借你的浏览器上网</title>
+<style>
+  :root { --g: #2bff9b; --bg: #03060a; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden;
+    font-family: "Cascadia Mono", ui-monospace, Consolas, "Microsoft YaHei UI", monospace; }
+  #wrap { position: absolute; inset: 0; }
+  #cv { position: absolute; inset: 0; margin: auto; width: 100vw; height: 100vh;
+        object-fit: contain; image-rendering: auto; cursor: none; }
+  /* CRT 后期：全部交给合成器，canvas 里一次全屏操作都不做 */
+  #crt { position: absolute; inset: 0; pointer-events: none; z-index: 3;
+    background:
+      repeating-linear-gradient(0deg, rgba(0,0,0,.30) 0 1.5px, rgba(0,0,0,0) 1.5px 4px),
+      repeating-linear-gradient(0deg, rgba(43,255,155,.045) 0 1px, rgba(0,0,0,0) 1px 60px),
+      repeating-linear-gradient(90deg, rgba(43,255,155,.045) 0 1px, rgba(0,0,0,0) 1px 60px),
+      radial-gradient(ellipse 105% 105% at 50% 50%, rgba(0,0,0,0) 40%, rgba(0,0,0,.62) 100%);
+  }
+  #crt::before { content: ''; position: absolute; inset: -30%; opacity: .055;
+    background-image: var(--grain); background-repeat: repeat;
+    animation: grain .28s steps(3) infinite; }
+  @keyframes grain {
+    0% { transform: translate(0, 0); }
+    33% { transform: translate(-2.5%, 1.8%); }
+    66% { transform: translate(1.8%, -2.4%); }
+  }
+  #veil, #endveil {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 26px;
+    background: radial-gradient(ellipse at center, #08130f 0%, #03060a 70%);
+    color: var(--g); transition: opacity .55s ease; z-index: 10;
+  }
+  #endveil { opacity: 0; pointer-events: none; }
+  #veil.gone { opacity: 0; pointer-events: none; }
+  .frame { position: relative; padding: 30px 54px 26px; border: 2px solid var(--g);
+           box-shadow: 0 0 60px rgba(43,255,155,.22), inset 0 0 60px rgba(43,255,155,.06); }
+  .frame::before, .frame::after { content: ''; position: absolute; width: 22px; height: 22px;
+           border: 2px solid var(--g); }
+  .frame::before { top: -8px; left: -8px; border-right: 0; border-bottom: 0; }
+  .frame::after { bottom: -8px; right: -8px; border-left: 0; border-top: 0; }
+  .art { font-size: clamp(10px, 1.5vw, 20px); line-height: 1.1; white-space: pre;
+         color: var(--g); text-shadow: 0 0 18px rgba(43,255,155,.55); letter-spacing: .04em; }
+  .sub { font-size: clamp(12px, 1.3vw, 19px); color: #8dffca; opacity: .85; letter-spacing: .18em; }
+  .hint { font-size: clamp(11px, 1.1vw, 16px); color: #4d6376; letter-spacing: .08em; }
+  #start {
+    cursor: pointer; padding: 16px 44px; font: inherit; font-size: clamp(13px, 1.4vw, 20px);
+    color: #03060a; background: var(--g); border: 0; letter-spacing: .14em;
+    box-shadow: 0 0 42px rgba(43,255,155,.42); transition: transform .18s, box-shadow .18s;
+  }
+  #start:hover { transform: translateY(-2px); box-shadow: 0 0 62px rgba(43,255,155,.7); }
+  .cur { display: inline-block; animation: bl 1.05s steps(1) infinite; }
+  @keyframes bl { 50% { opacity: 0; } }
+  .bar { width: min(560px, 60vw); height: 3px; background: #16222c; overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--g); transition: width .2s; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="cv"></canvas><div id="crt"></div></div>
+
+<div id="veil">
+  <div class="frame"><div class="art" id="art"></div></div>
+  <div class="sub">让 AI 借你的浏览器上网</div>
+  <button id="start">▶ 开 始</button>
+  <div class="hint">点击或按空格开始 · 建议戴耳机 · F 全屏</div>
+</div>
+
+<div id="endveil">
+  <div class="sub">播 放 完 了</div>
+  <div class="hint">按 R 重播</div>
+</div>
+
+<!--INJECT:SCRIPTS-->
+<script>
+  // 启动屏的 ASCII 边框 + 噪点纹理
+  (function () {
+    const el = document.getElementById('art');
+    const rows = [
+      'RRRRR   SSSS   FFFFF   ·  r s f',
+      'R   R  S       F',
+      'RRRR    SSS    FFFF   browser for AI',
+      'R  R       S   F',
+      'R   R  SSSS    F      v2.0',
+    ];
+    el.innerHTML = rows.join('\n');
+
+    const n = document.createElement('canvas'); n.width = n.height = 140;
+    const g = n.getContext('2d'), d = g.createImageData(140, 140);
+    for (let i = 0; i < d.data.length; i += 4) {
+      const v = Math.random() * 255;
+      d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255;
+    }
+    g.putImageData(d, 0, 0);
+    document.getElementById('crt').style.setProperty('--grain', `url(${n.toDataURL()})`);
+  })();
+</script>
+</body>
+</html>
