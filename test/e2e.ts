@@ -6,26 +6,26 @@ import path from 'node:path'
 import assert from 'node:assert/strict'
 
 const ROOT = path.resolve(import.meta.dirname, '..')
-const HOME = path.join(ROOT, '.rsf-test', 'e2e')
-const env = { ...process.env, RSF_HOME: HOME, RSF_PORT: '9799', RSF_FORMAT: '' }
-delete (env as any).RSF_TAB
+const HOME = path.join(ROOT, '.seed-browser-test', 'e2e')
+const env = { ...process.env, SEED_BROWSER_HOME: HOME, SEED_BROWSER_PORT: '9799', SEED_BROWSER_FORMAT: '' }
+delete (env as any).SEED_BROWSER_TAB
 
-function rsf(...args: string[]): string {
-  return execFileSync(process.execPath, [path.join(ROOT, 'bin/recursurf.js'), ...args], { env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+function cli(...args: string[]): string {
+  return execFileSync(process.execPath, [path.join(ROOT, 'bin/seed-browser.js'), ...args], { env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 }
 /** 在某个目录里执行（项目级函数库生效），可以从 stdin 喂数据 */
-function rsfIn(cwd: string, args: string[], input?: string): string {
-  return execFileSync(process.execPath, [path.join(ROOT, 'bin/recursurf.js'), ...args], { env, cwd, encoding: 'utf8', input, stdio: ['pipe', 'pipe', 'pipe'] }).trim()
+function cliIn(cwd: string, args: string[], input?: string): string {
+  return execFileSync(process.execPath, [path.join(ROOT, 'bin/seed-browser.js'), ...args], { env, cwd, encoding: 'utf8', input, stdio: ['pipe', 'pipe', 'pipe'] }).trim()
 }
-function rsfErr(...args: string[]): string {
+function cliErr(...args: string[]): string {
   try {
-    rsf(...args)
+    cli(...args)
   } catch (e: any) {
     return String(e.stderr)
   }
-  throw new Error(`应该失败：rsf ${args.join(' ')}`)
+  throw new Error(`应该失败：seed-browser ${args.join(' ')}`)
 }
-const json = (...args: string[]) => JSON.parse(rsf(...args, '-o', 'json'))
+const json = (...args: string[]) => JSON.parse(cli(...args, '-o', 'json'))
 
 let passed = 0
 async function test(name: string, fn: () => void | Promise<void>) {
@@ -60,7 +60,7 @@ try {
   })
 
   await test('snapshot 给元素编号', () => {
-    const s = rsf('snapshot', '-i')
+    const s = cli('snapshot', '-i')
     assert.match(s, /textbox "用户名" \[ref=e1\]/)
     assert.match(s, /combobox "城市" \[ref=e3\].*北京 \| 上海/)
     assert.match(s, /button "iframe 按钮" \[ref=e\d+\]/)
@@ -68,11 +68,11 @@ try {
 
   await test('填表 + 下拉 + 勾选 + 日期 + 上传 + 提交', () => {
     assert.equal(json('fill', 'e1', '小明').value, '小明')
-    rsf('select', 'e3', '上海')
+    cli('select', 'e3', '上海')
     assert.equal(json('check', 'e4').checked, true)
     assert.equal(json('fill', 'e5', '2000-01-02').value, '2000-01-02')
-    rsf('upload', 'e6', path.join(ROOT, 'package.json'))
-    rsf('click', 'e7')
+    cli('upload', 'e6', path.join(ROOT, 'package.json'))
+    cli('click', 'e7')
     const out = JSON.parse(json('eval', `document.getElementById('out').textContent`))
     assert.deepEqual([out.user, out.city, out.agree, out.birthday], ['小明', 'sh', 'on', '2000-01-02'])
   })
@@ -84,22 +84,22 @@ try {
   })
 
   await test('iframe 里的按钮可以点', () => {
-    const ref = rsf('snapshot', '-i').match(/button "iframe 按钮" \[ref=(e\d+)\]/)![1]
-    rsf('click', ref)
-    assert.match(rsf('snapshot'), /iframe 已点/)
+    const ref = cli('snapshot', '-i').match(/button "iframe 按钮" \[ref=(e\d+)\]/)![1]
+    cli('click', ref)
+    assert.match(cli('snapshot'), /iframe 已点/)
   })
 
   await test('被遮罩挡住时报错并说明是谁', () => {
-    const snap = rsf('snapshot', '-i')
+    const snap = cli('snapshot', '-i')
     const mask = snap.match(/button "显示遮罩" \[ref=(e\d+)\]/)![1]
     const link = snap.match(/link "去文章页" \[ref=(e\d+)\]/)![1]
-    rsf('click', mask)
-    assert.match(rsfErr('click', link), /被别的元素挡住了：div#mask/)
-    rsf('eval', `document.getElementById('mask').click()`)
+    cli('click', mask)
+    assert.match(cliErr('click', link), /被别的元素挡住了：div#mask/)
+    cli('eval', `document.getElementById('mask').click()`)
   })
 
   await test('点击打开新标签时报告', () => {
-    const ref = rsf('snapshot', '-i').match(/link "新标签打开列表" \[ref=(e\d+)\]/)![1]
+    const ref = cli('snapshot', '-i').match(/link "新标签打开列表" \[ref=(e\d+)\]/)![1]
     const r = json('click', ref)
     assert.equal(r.changes.newTabs[0].url, `${U}/list`)
   })
@@ -107,11 +107,11 @@ try {
   await test('定位：CSS / getByLabel / getByRole / getByText，多个匹配时报错列候选', () => {
     assert.equal(json('fill', "getByLabel('用户名')", '小红').value, '小红')
     assert.equal(json('fill', 'textarea[name=bio]', '简介').value, '简介')
-    const err = rsfErr('click', 'button')
+    const err = cliErr('click', 'button')
     assert.match(err, /\[AMBIGUOUS\] button 匹配到/)
     assert.match(err, /候选：/)
-    assert.match(rsfErr('click', "getByText('不存在的字')"), /没有找到/)
-    rsf('click', "getByRole('button', { name: '提交' })")
+    assert.match(cliErr('click', "getByText('不存在的字')"), /没有找到/)
+    cli('click', "getByRole('button', { name: '提交' })")
     assert.equal(JSON.parse(json('eval', `document.getElementById('out').textContent`)).user, '小红')
   })
 
@@ -121,31 +121,31 @@ try {
       r.fields.map((f: any) => f.value ?? f.selected?.[0] ?? f.checked),
       ['甲', '北京', false],
     )
-    assert.match(rsf('find', '同意协议'), /checkbox "同意协议" \[ref=e\d+/)
+    assert.match(cli('find', '同意协议'), /checkbox "同意协议" \[ref=e\d+/)
     assert.equal(json('eval', 'el => el.name', 'textarea'), 'bio')
   })
 
   await test('编号对应的元素被重绘后，按角色 + 名字自动重新定位', () => {
-    const ref = rsf('snapshot', '-i').match(/button "重绘目标" \[ref=(e\d+)\]/)![1]
-    rsf('click', "getByText('重绘一下')")
+    const ref = cli('snapshot', '-i').match(/button "重绘目标" \[ref=(e\d+)\]/)![1]
+    cli('click', "getByText('重绘一下')")
     const r = json('click', ref)
     assert.match(r.changes.note, /重新定位/)
     assert.equal(json('eval', `document.querySelector('#rr button').textContent`), '目标已点')
   })
 
   await test('按坐标点击 + 按住 Shift + --modifiers', () => {
-    rsf('scroll', '#cv')
+    cli('scroll', '#cv')
     const [x, y] = json('eval', `(() => { const r = document.getElementById('cv').getBoundingClientRect(); return [r.x, r.y] })()`)
-    rsf('mouse', 'click', String(Math.round(x + 11)), String(Math.round(y + 21)))
+    cli('mouse', 'click', String(Math.round(x + 11)), String(Math.round(y + 21)))
     const [hx, hy] = json('eval', `document.getElementById('cv').dataset.hit`).split(',').map(Number)
     assert.ok(Math.abs(hx - 10) <= 1 && Math.abs(hy - 20) <= 1, `点到了 ${hx},${hy}`)
-    rsf('key', 'down', 'Shift')
-    rsf('click', '#sk')
-    rsf('key', 'up', 'Shift')
+    cli('key', 'down', 'Shift')
+    cli('click', '#sk')
+    cli('key', 'up', 'Shift')
     assert.equal(json('eval', `document.getElementById('sk').dataset.shift`), 'true')
-    rsf('click', '#sk')
+    cli('click', '#sk')
     assert.equal(json('eval', `document.getElementById('sk').dataset.shift`), 'false')
-    rsf('click', '#sk', '--modifiers', 'Shift')
+    cli('click', '#sk', '--modifiers', 'Shift')
     assert.equal(json('eval', `document.getElementById('sk').dataset.shift`), 'true')
   })
 
@@ -169,10 +169,10 @@ try {
   })
 
   await test('跳转后旧编号失效，并提示重新 snapshot', () => {
-    const ref = rsf('snapshot', '-i').match(/link "去文章页" \[ref=(e\d+)\]/)![1]
+    const ref = cli('snapshot', '-i').match(/link "去文章页" \[ref=(e\d+)\]/)![1]
     const r = json('click', ref)
     assert.equal(r.changes.navigated, true)
-    assert.match(rsfErr('click', 'e1'), /rsf snapshot/)
+    assert.match(cliErr('click', 'e1'), /seed-browser snapshot/)
   })
 
   await test('read：文章 + 元信息 + 评论分段', () => {
@@ -182,7 +182,7 @@ try {
     assert.match(r.content, /第 8 段/)
     assert.ok(r.sections.some((s: any) => s.id === 'comments'))
     assert.ok(r.hints.some((h: string) => h.includes('__INITIAL_STATE__')))
-    assert.match(rsf('read', '-s', 'comments'), /第 4 条评论/)
+    assert.match(cli('read', '-s', 'comments'), /第 4 条评论/)
   })
 
   await test('read --grep：只返回命中的段落 + 位置，配合 --offset / --section', () => {
@@ -199,20 +199,20 @@ try {
     assert.equal(c.matches.length, 1)
     assert.match(c.matches[0].text, /第 4 段[\s\S]*第 7 段/)
     // 只搜评论区；没命中时说清楚
-    assert.match(rsf('read', '-s', 'comments', '--grep', '用户2'), /第 2 条评论/)
-    assert.match(rsf('read', '--grep', '不存在的词xyz'), /没有匹配/)
+    assert.match(cli('read', '-s', 'comments', '--grep', '用户2'), /第 2 条评论/)
+    assert.match(cli('read', '--grep', '不存在的词xyz'), /没有匹配/)
   })
 
   await test('wait --url：子串 / 通配 / 正则', () => {
     assert.equal(json('wait', '--url', '/article').ok, true)
     assert.equal(json('wait', '--url', '*127.0.0.1*/art*').ok, true)
     assert.equal(json('wait', '--url', '/\\/ar?ticle$/').ok, true)
-    assert.match(rsfErr('wait', '--url', '/\\/article\\d+/', '--timeout', '500'), /TIMEOUT/)
-    assert.match(rsfErr('wait', '--url', '/a(b/', '--timeout', '500'), /BAD_ARGS|正则/)
+    assert.match(cliErr('wait', '--url', '/\\/article\\d+/', '--timeout', '500'), /TIMEOUT/)
+    assert.match(cliErr('wait', '--url', '/a(b/', '--timeout', '500'), /BAD_ARGS|正则/)
   })
 
   await test('read：列表页识别 + 分页', () => {
-    rsf('goto', `${U}/list`)
+    cli('goto', `${U}/list`)
     const r = json('read', '--limit', '5')
     assert.equal(r.type, 'list')
     assert.equal(r.items.length, 5)
@@ -221,15 +221,15 @@ try {
   })
 
   await test('eval：await / 隔离环境', () => {
-    rsf('goto', `${U}/form`)
+    cli('goto', `${U}/form`)
     assert.equal(json('eval', `const r = await fetch('/api/user?id=7'); (await r.json()).id`), 7)
-    rsf('eval', 'window.secret = 1')
+    cli('eval', 'window.secret = 1')
     assert.deepEqual(json('eval', '--isolated', '[document.title, typeof window.secret]'), ['表单测试', 'undefined'])
   })
 
   await test('网络记录 + 响应体', () => {
-    rsf('net', 'log')
-    rsf('reload')
+    cli('net', 'log')
+    cli('reload')
     const rows = json('net', 'log', '--api')
     const req = rows.find((r: any) => r.url.includes('/api/user'))
     assert.ok(req)
@@ -238,36 +238,36 @@ try {
   })
 
   await test('拦截：返回假数据 / 屏蔽', () => {
-    rsf('console')
-    rsf('net', 'route', 'add', '*/api/user*', '--fulfill', '{"name":"假数据"}')
-    rsf('reload')
+    cli('console')
+    cli('net', 'route', 'add', '*/api/user*', '--fulfill', '{"name":"假数据"}')
+    cli('reload')
     const logs = json('console')
     assert.ok(logs.some((l: any) => l.text === 'user 假数据'))
-    rsf('net', 'route', 'rm')
-    rsf('net', 'route', 'add', '/api/', '--abort')
-    rsf('net', 'clear')
-    rsf('reload')
+    cli('net', 'route', 'rm')
+    cli('net', 'route', 'add', '/api/', '--abort')
+    cli('net', 'clear')
+    cli('reload')
     assert.ok(json('net', 'log', '--failed').some((r: any) => String(r.status).includes('blocked')))
-    rsf('net', 'route', 'rm')
+    cli('net', 'route', 'rm')
   })
 
   await test('打开页面前注入', () => {
-    rsf('inject', 'add', 'window.__early = document.body === null')
-    rsf('reload')
+    cli('inject', 'add', 'window.__early = document.body === null')
+    cli('reload')
     // 注入脚本在页面自己的脚本之前运行，那时 body 还不存在
     assert.equal(json('eval', 'window.__early'), true)
     assert.equal(json('inject', 'list').length, 1)
-    rsf('inject', 'rm')
+    cli('inject', 'rm')
   })
 
   await test('截图（含编号标注）', () => {
-    rsf('snapshot')
+    cli('snapshot')
     const r = json('shot', '--marks', '--save', path.join(HOME, 'shot.png'))
     assert.ok(fs.statSync(r.file).size > 1000)
   })
 
   await test('未知命令给出提示', () => {
-    assert.match(rsfErr('nope'), /rsf help/)
+    assert.match(cliErr('nope'), /seed-browser help/)
   })
 
   const PROJ = path.join(HOME, 'proj')
@@ -282,7 +282,7 @@ export async function echo(word, { limit = 5, full = false, tag = 'x' } = {}) {
 
 /** 列表页的标题 */
 export async function titles(url, { limit = 3 } = {}) {
-  const tab = await rsf.open(url)
+  const tab = await seedBrowser.open(url)
   try {
     return await tab.eval(n => [...document.querySelectorAll('li h3')].slice(0, n).map(h => ({ title: h.innerText })), limit)
   } finally {
@@ -297,33 +297,33 @@ export async function read(tab) {
 `
 
   await test('函数库：lib list / call（类型看默认值）/ 管道', () => {
-    fs.mkdirSync(path.join(PROJ, '.rsf', 'lib'), { recursive: true })
-    fs.writeFileSync(path.join(PROJ, '.rsf', 'lib', '127.0.0.1.js'), LIB)
-    const list = rsfIn(PROJ, ['lib', 'list', '127.0.0.1'])
+    fs.mkdirSync(path.join(PROJ, '.seed-browser', 'lib'), { recursive: true })
+    fs.writeFileSync(path.join(PROJ, '.seed-browser', 'lib', '127.0.0.1.js'), LIB)
+    const list = cliIn(PROJ, ['lib', 'list', '127.0.0.1'])
     assert.match(list, /测试站点笔记/)
     assert.match(list, /echo\(word, \{ limit = 5, full = false, tag = 'x' \} = \{\}\)/)
-    assert.match(list, /rsf call 127\.0\.0\.1 echo <word> \[--limit 5\] \[--full\] \[--tag x\]/)
+    assert.match(list, /seed-browser call 127\.0\.0\.1 echo <word> \[--limit 5\] \[--full\] \[--tag x\]/)
     assert.match(list, /例：echo\('abc', \{ limit: 3 \}\)/)
-    const r = JSON.parse(rsfIn(PROJ, ['call', '127.0.0.1', 'echo', '42', '--limit', '3', '--full', '-o', 'json']))
+    const r = JSON.parse(cliIn(PROJ, ['call', '127.0.0.1', 'echo', '42', '--limit', '3', '--full', '-o', 'json']))
     assert.deepEqual(r, { word: '42', limit: 3, full: true, tag: 'x', types: ['string', 'number', 'boolean'] })
-    assert.match(rsfIn(PROJ, ['lib', 'list']), /127\.0\.0\.1\s+echo titles read\s+（project）/)
-    const out = rsfIn(PROJ, ['call', '127.0.0.1', 'titles', '-', '--limit', '2'], JSON.stringify({ url: `${U}/list` }) + '\n')
+    assert.match(cliIn(PROJ, ['lib', 'list']), /127\.0\.0\.1\s+echo titles read\s+（project）/)
+    const out = cliIn(PROJ, ['call', '127.0.0.1', 'titles', '-', '--limit', '2'], JSON.stringify({ url: `${U}/list` }) + '\n')
     assert.deepEqual(
       out.split('\n').map(l => JSON.parse(l).title),
       ['电影 0 号：一个很长的标题', '电影 1 号：一个很长的标题'],
     )
   })
 
-  await test('rsf lib test：跑 @example，@test file / @test skip，按错误码分类', () => {
+  await test('seed-browser lib test：跑 @example，@test file / @test skip，按错误码分类', () => {
     fs.writeFileSync(
-      path.join(PROJ, '.rsf', 'lib', 'libtest.local.js'),
+      path.join(PROJ, '.seed-browser', 'lib', 'libtest.local.js'),
       `import fs from 'node:fs'
 /** 读测试前写好的文件
  *  @example note('note.txt')
  *  @test file note.txt 第一行\\n第二行 */
 export async function note(f) { return fs.readFileSync(f, 'utf8').split('\\n') }
 /** @example gone('x') */
-export async function gone(id) { throw new RsfError('NOT_FOUND', '没有 ' + id) }
+export async function gone(id) { throw new SeedBrowserError('NOT_FOUND', '没有 ' + id) }
 /** @example nothing() */
 export async function nothing() { return [] }
 /** @example danger()
@@ -333,7 +333,7 @@ export async function danger() { throw new Error('不该跑') }
     )
     let out = ''
     try {
-      rsfIn(PROJ, ['lib', 'test', 'libtest.local', '--delay', '0', '-o', 'json'])
+      cliIn(PROJ, ['lib', 'test', 'libtest.local', '--delay', '0', '-o', 'json'])
       assert.fail('有真失败时退出码应该不是 0')
     } catch (e: any) {
       out = String(e.stdout)
@@ -347,43 +347,43 @@ export async function danger() { throw new Error('不该跑') }
     assert.equal(by.nothing.code, 'EMPTY')
     assert.equal(by.danger.status, 'skip')
     assert.equal(fs.readFileSync(path.join(r.dir, 'libtest.local', 'note.txt'), 'utf8'), '第一行\n第二行')
-    assert.equal(JSON.parse(rsfIn(PROJ, ['lib', 'test', 'libtest.local', 'note', '-o', 'json'])).results.length, 1)
-    assert.match(rsfIn(PROJ, ['lib', 'list', 'libtest.local']), /rsf lib test 不跑这个函数的例子：会删东西/)
+    assert.equal(JSON.parse(cliIn(PROJ, ['lib', 'test', 'libtest.local', 'note', '-o', 'json'])).results.length, 1)
+    assert.match(cliIn(PROJ, ['lib', 'list', 'libtest.local']), /seed-browser lib test 不跑这个函数的例子：会删东西/)
   })
 
-  await test('rsf read <网址>：用函数库的 read，末尾列出函数，读完关掉标签', () => {
+  await test('seed-browser read <网址>：用函数库的 read，末尾列出函数，读完关掉标签', () => {
     const before = json('tab', 'list').length
-    const r = JSON.parse(rsfIn(PROJ, ['read', `${U}/list`, '-o', 'json']))
+    const r = JSON.parse(cliIn(PROJ, ['read', `${U}/list`, '-o', 'json']))
     assert.equal(r.via, 'lib:127.0.0.1')
     assert.equal(r.content, '12 items')
     assert.ok(r.lib.functions.some((f: any) => f.name === 'echo'))
     assert.equal(json('tab', 'list').length, before)
-    const txt = rsfIn(PROJ, ['read', `${U}/article`])
+    const txt = cliIn(PROJ, ['read', `${U}/article`])
     assert.match(txt, /via: readability/)
     assert.match(txt, /这个网站有函数库 127\.0\.0\.1/)
     assert.match(txt, /echo\(word/)
   })
 
-  await test('rsf run：顶层 await / import / rsf.lib / 下一次拿回标签 / 大结果写文件 / 报错位置', () => {
-    const id = JSON.parse(rsfIn(PROJ, ['run', `const t = await rsf.open('${U}/list'); return t.id`, '-o', 'json']))
+  await test('seed-browser run：顶层 await / import / seedBrowser.lib / 下一次拿回标签 / 大结果写文件 / 报错位置', () => {
+    const id = JSON.parse(cliIn(PROJ, ['run', `const t = await seedBrowser.open('${U}/list'); return t.id`, '-o', 'json']))
     assert.match(id, /^t\d+$/)
-    assert.equal(JSON.parse(rsfIn(PROJ, ['run', `await (await rsf.tab('${id}')).title()`, '-o', 'json'])), '搜索结果')
-    rsf('tab', 'close', id)
-    assert.equal(JSON.parse(rsfIn(PROJ, ['run', `import path from 'node:path'; const r = await rsf.lib('127.0.0.1').echo('a'); return path.basename('/x/' + r.word)`, '-o', 'json'])), 'a')
-    const big = rsfIn(PROJ, ['run', 'return Array.from({ length: 5000 }, (_, i) => ({ i, s: "abc" }))'])
+    assert.equal(JSON.parse(cliIn(PROJ, ['run', `await (await seedBrowser.tab('${id}')).title()`, '-o', 'json'])), '搜索结果')
+    cli('tab', 'close', id)
+    assert.equal(JSON.parse(cliIn(PROJ, ['run', `import path from 'node:path'; const r = await seedBrowser.lib('127.0.0.1').echo('a'); return path.basename('/x/' + r.word)`, '-o', 'json'])), 'a')
+    const big = cliIn(PROJ, ['run', 'return Array.from({ length: 5000 }, (_, i) => ({ i, s: "abc" }))'])
     const file = big.match(/写到了：(.+)/)![1].trim()
     assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).length, 5000)
     assert.match(big, /数组，共 5000 项/)
     const errFile = path.join(HOME, 'err.js')
     fs.writeFileSync(errFile, 'const a = 1\nnull.x\n')
-    assert.match(rsfErr('run', '-f', errFile), /位置：.*err\.js:2  null\.x/)
+    assert.match(cliErr('run', '-f', errFile), /位置：.*err\.js:2  null\.x/)
   })
 
   await test('tab.collect：让网站自己发请求，接住每一页的返回', () => {
     const f = path.join(HOME, 'collect.js')
     fs.writeFileSync(
       f,
-      `const tab = await rsf.open('${U}/search')
+      `const tab = await seedBrowser.open('${U}/search')
 let calls = 0
 const pages = []
 const more = async () => {
@@ -397,29 +397,29 @@ await tab.close()
 return pages
 `,
     )
-    assert.deepEqual(JSON.parse(rsfIn(PROJ, ['run', '-f', f, '-o', 'json'])), [1, 2, 3])
+    assert.deepEqual(JSON.parse(cliIn(PROJ, ['run', '-f', f, '-o', 'json'])), [1, 2, 3])
   })
 
   await test('snapshot：带点击事件的普通元素也有编号', () => {
-    rsf('goto', `${U}/search`)
-    assert.match(rsf('snapshot', '-i'), /clickable "热门推荐" \[ref=e\d+\]/)
+    cli('goto', `${U}/search`)
+    assert.match(cli('snapshot', '-i'), /clickable "热门推荐" \[ref=e\d+\]/)
   })
 
   await test('trace：录制 → 报告（数据溯源 / 签名 / 翻页 / 参数来源）', () => {
     try {
-      rsf('trace', 'rm', 'e2e')
+      cli('trace', 'rm', 'e2e')
     } catch {}
-    rsf('trace', 'start', 'e2e', '--goal', '搜索视频')
-    const q = rsf('snapshot', '-i').match(/textbox "关键词" \[ref=(e\d+)\]/)![1]
-    rsf('fill', q, '猫咪', '--submit')
-    rsf('read')
-    rsf('trace', 'mark', '翻页')
-    const snap = rsf('snapshot', '-i')
-    rsf('click', snap.match(/button "下一页" \[ref=(e\d+)\]/)![1])
-    rsf('click', rsf('snapshot', '-i').match(/link "[^"]+" \[ref=(e\d+)\]/)![1])
+    cli('trace', 'start', 'e2e', '--goal', '搜索视频')
+    const q = cli('snapshot', '-i').match(/textbox "关键词" \[ref=(e\d+)\]/)![1]
+    cli('fill', q, '猫咪', '--submit')
+    cli('read')
+    cli('trace', 'mark', '翻页')
+    const snap = cli('snapshot', '-i')
+    cli('click', snap.match(/button "下一页" \[ref=(e\d+)\]/)![1])
+    cli('click', cli('snapshot', '-i').match(/link "[^"]+" \[ref=(e\d+)\]/)![1])
     const r = json('trace', 'stop')
     assert.ok(r.bodies >= 3)
-    const rep = rsf('trace', 'digest', 'e2e')
+    const rep = cli('trace', 'digest', 'e2e')
     assert.match(rep, /\*\*数据来源：`GET 127\.0\.0\.1:\d+\/api\/search`\*\*/)
     assert.match(rep, /参数里有签名：sign/)
     assert.match(rep, /\| q \| `猫咪`.*来自输入 "猫咪"/)
@@ -440,10 +440,10 @@ return pages
 
 } finally {
   try {
-    rsf('browser', 'disconnect', 'e2e', '--kill')
+    cli('browser', 'disconnect', 'e2e', '--kill')
   } catch {}
   try {
-    rsf('daemon', 'stop')
+    cli('daemon', 'stop')
   } catch {}
   srv.close()
 }

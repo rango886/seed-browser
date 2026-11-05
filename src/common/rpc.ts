@@ -3,8 +3,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
-import { DAEMON_FILE, RSF_HOME, ensureDir } from './paths.ts'
-import { RsfError, sleep } from './util.ts'
+import { DAEMON_FILE, SEED_BROWSER_HOME, ensureDir } from './paths.ts'
+import { SeedBrowserError, sleep } from './util.ts'
 
 interface DaemonInfo {
   port: number
@@ -30,14 +30,14 @@ export class RpcClient {
     const c = new RpcClient()
     let info = readDaemonInfo()
     if (info && (await c.tryOpen(info))) return c
-    if (opts.autostart === false) throw new RsfError('NO_DAEMON', 'daemon 没有运行', '执行 `rsf daemon start`')
+    if (opts.autostart === false) throw new SeedBrowserError('NO_DAEMON', 'daemon 没有运行', '执行 `seed-browser daemon start`')
     startDaemonDetached()
     for (let i = 0; i < 50; i++) {
       await sleep(200)
       info = readDaemonInfo()
       if (info && (await c.tryOpen(info))) return c
     }
-    throw new RsfError('NO_DAEMON', 'daemon 启动失败', `查看日志 ${path.join(RSF_HOME, 'daemon.log')}`)
+    throw new SeedBrowserError('NO_DAEMON', 'daemon 启动失败', `查看日志 ${path.join(SEED_BROWSER_HOME, 'daemon.log')}`)
   }
 
   private tryOpen(info: DaemonInfo): Promise<boolean> {
@@ -47,7 +47,7 @@ export class RpcClient {
         this.ws = ws
         ws.on('message', d => this.onMessage(String(d)))
         ws.on('close', () => {
-          for (const p of this.pending.values()) p.reject(new RsfError('DISCONNECTED', 'daemon 连接断开'))
+          for (const p of this.pending.values()) p.reject(new SeedBrowserError('DISCONNECTED', 'daemon 连接断开'))
           this.pending.clear()
         })
         resolve(true)
@@ -61,7 +61,7 @@ export class RpcClient {
     const p = this.pending.get(msg.id)
     if (!p) return
     this.pending.delete(msg.id)
-    if (msg.error) p.reject(new RsfError(msg.error.code || 'ERROR', msg.error.message, msg.error.hint))
+    if (msg.error) p.reject(new SeedBrowserError(msg.error.code || 'ERROR', msg.error.message, msg.error.hint))
     else p.resolve(msg.result)
   }
 
@@ -79,8 +79,8 @@ export class RpcClient {
 }
 
 export function startDaemonDetached() {
-  ensureDir(RSF_HOME)
-  const log = fs.openSync(path.join(RSF_HOME, 'daemon.log'), 'a')
+  ensureDir(SEED_BROWSER_HOME)
+  const log = fs.openSync(path.join(SEED_BROWSER_HOME, 'daemon.log'), 'a')
   // 跟着当前文件走：源码运行时是 src/daemon/main.ts，发布包里是编译后的 dist/daemon/main.js
   const ext = path.extname(fileURLToPath(import.meta.url))
   const child = spawn(process.execPath, [fileURLToPath(new URL(`../daemon/main${ext}`, import.meta.url))], {

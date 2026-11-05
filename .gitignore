@@ -1,4 +1,4 @@
 node_modules/
-.rsf-test/
+.seed-browser-test/
 *.log
 dist/

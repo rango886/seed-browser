@@ -3,7 +3,7 @@ import path from 'node:path'
 import { createRequire } from 'node:module'
 import type { TabSession } from './session.ts'
 import { REPO_ROOT } from '../common/paths.ts'
-import { RsfError, sleep } from '../common/util.ts'
+import { SeedBrowserError, sleep } from '../common/util.ts'
 import { scroll } from './actions.ts'
 
 const require = createRequire(import.meta.url)
@@ -19,7 +19,7 @@ function libSource() {
     const Readability = (() => { const module = { exports: {} }; ${readability}\n; return module.exports })();
     const TurndownService = (() => { const module = { exports: {} }; const exports = module.exports; ${turndown}\n; return module.exports })();
     ${extract}
-    return { Readability, TurndownService, rsfExtract };
+    return { Readability, TurndownService, seedBrowserExtract };
   })()`
   return LIB_SRC
 }
@@ -52,7 +52,7 @@ export async function read(s: TabSession, o: ReadOpts) {
   }
   const via = ['readability', 'list', 'outline'].includes(o.via || '') ? o.via : undefined
   const res = await s.evaluate(
-    `(async () => { const L = ${libSource()}; return await L.rsfExtract(${JSON.stringify({
+    `(async () => { const L = ${libSource()}; return await L.seedBrowserExtract(${JSON.stringify({
       mode: o.mode || 'default',
       section: o.section,
       offset: o.offset,
@@ -62,6 +62,6 @@ export async function read(s: TabSession, o: ReadOpts) {
       links: o.links,
     })}, L) })()`,
   )
-  if (res?.error) throw new RsfError('READ_FAILED', res.error, res.sections ? `可用分段：${res.sections.map((x: any) => x.id).join(', ')}` : undefined)
+  if (res?.error) throw new SeedBrowserError('READ_FAILED', res.error, res.sections ? `可用分段：${res.sections.map((x: any) => x.id).join(', ')}` : undefined)
   return res
 }

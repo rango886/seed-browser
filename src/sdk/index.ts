@@ -1,29 +1,29 @@
 import path from 'node:path'
 import { RpcClient } from '../common/rpc.ts'
-import { RsfError, patternString, sleep, urlMatches } from '../common/util.ts'
+import { SeedBrowserError, patternString, sleep, urlMatches } from '../common/util.ts'
 import { grepItems, grepText } from '../common/grep.ts'
 import { findLib, hostOf, importLib, libInfo, type LibFn } from './lib.ts'
 
 /**
- * 全局的 rsf 对象：rsf run 的代码和函数库（lib/<域名>.js）里的函数用的是同一个。
+ * 全局的 seedBrowser 对象：seed-browser run 的代码和函数库（lib/<域名>.js）里的函数用的是同一个。
  *
- *   rsf.tab(idOrMatch)     按编号（t5）或网址匹配拿到一个标签；匹配不到就后台新开
- *   rsf.open(url)          后台新开一个标签
- *   rsf.tabs(filter?)      列出标签
- *   rsf.read(urlOrTab)     通用阅读（有函数库的 read 就用它），返回 { title, content, … }
- *   rsf.lib(domain)        某个域名的函数库：await rsf.lib('reddit.com').search('sqlite')
- *   rsf.log(...)  rsf.sleep(ms)
+ *   seedBrowser.tab(idOrMatch)     按编号（t5）或网址匹配拿到一个标签；匹配不到就后台新开
+ *   seedBrowser.open(url)          后台新开一个标签
+ *   seedBrowser.tabs(filter?)      列出标签
+ *   seedBrowser.read(urlOrTab)     通用阅读（有函数库的 read 就用它），返回 { title, content, … }
+ *   seedBrowser.lib(domain)        某个域名的函数库：await seedBrowser.lib('reddit.com').search('sqlite')
+ *   seedBrowser.log(...)  seedBrowser.sleep(ms)
  *
  * 状态（登录、标签、网络记录）都在 daemon 里，进程退出也不会丢。
  */
 
-export interface RsfOptions {
-  /** 默认标签（-t / RSF_TAB） */
+export interface SeedBrowserOptions {
+  /** 默认标签（-t / SEED_BROWSER_TAB） */
   tab?: string
   /** 默认浏览器（--browser） */
   browser?: string
   cwd?: string
-  /** 把这个 rsf 和 RsfError 放到全局（默认 true） */
+  /** 把这个 seedBrowser 和 SeedBrowserError 放到全局（默认 true） */
   global?: boolean
 }
 
@@ -45,15 +45,15 @@ export interface ClickOptions {
 }
 
 export class Tab {
-  rsf: Rsf
+  seedBrowser: SeedBrowser
   id: string
-  constructor(rsf: Rsf, id: string) {
-    this.rsf = rsf
+  constructor(seedBrowser: SeedBrowser, id: string) {
+    this.seedBrowser = seedBrowser
     this.id = id
   }
   /** 对这个标签发 RPC */
   c(method: string, params: any = {}) {
-    return this.rsf.call(method, { tab: this.id, ...params })
+    return this.seedBrowser.call(method, { tab: this.id, ...params })
   }
   toString() {
     return this.id
@@ -96,12 +96,12 @@ export class Tab {
   /** 用页面自己的 cookie / 登录状态发请求，返回 JSON */
   async fetch<T = any>(url: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}): Promise<T> {
     const r = await this.c('page.fetch', { url, init })
-    if (r.status === 401) throw new RsfError('NEED_LOGIN', `401 ${url}`, '没登录或登录过期：请用户在浏览器里登录这个网站后重试')
-    if (r.status === 403) throw new RsfError('NEED_LOGIN', `403 ${url}`, '可能没登录，也可能被网站拦了（无头 / 新 profile 的浏览器常见）：换用户日常的浏览器，或请用户先登录')
-    if (r.status === 429) throw new RsfError('BLOCKED', `429 请求太频繁：${url}`, '停一会儿再试，或者放慢速度')
-    if (r.status === 404) throw new RsfError('NOT_FOUND', `404 ${url}`, '检查参数')
-    if (r.status >= 400) throw new RsfError('HTTP_ERROR', `${r.status} ${url}`, String(r.text ?? '').slice(0, 300))
-    if (r.json === undefined) throw new RsfError('NOT_JSON', `响应不是 JSON：${url}`, String(r.text).slice(0, 300))
+    if (r.status === 401) throw new SeedBrowserError('NEED_LOGIN', `401 ${url}`, '没登录或登录过期：请用户在浏览器里登录这个网站后重试')
+    if (r.status === 403) throw new SeedBrowserError('NEED_LOGIN', `403 ${url}`, '可能没登录，也可能被网站拦了（无头 / 新 profile 的浏览器常见）：换用户日常的浏览器，或请用户先登录')
+    if (r.status === 429) throw new SeedBrowserError('BLOCKED', `429 请求太频繁：${url}`, '停一会儿再试，或者放慢速度')
+    if (r.status === 404) throw new SeedBrowserError('NOT_FOUND', `404 ${url}`, '检查参数')
+    if (r.status >= 400) throw new SeedBrowserError('HTTP_ERROR', `${r.status} ${url}`, String(r.text ?? '').slice(0, 300))
+    if (r.json === undefined) throw new SeedBrowserError('NOT_JSON', `响应不是 JSON：${url}`, String(r.text).slice(0, 300))
     return r.json
   }
   async fetchText(url: string, init: any = {}): Promise<string> {
@@ -110,7 +110,7 @@ export class Tab {
 
   // ---- 看页面 ----
   read(opts: ReadOptions = {}) {
-    return this.rsf.read(this, opts)
+    return this.seedBrowser.read(this, opts)
   }
   snapshot(opts: { interactive?: boolean; max?: number } = {}): Promise<{ text: string; refs: number; truncated: boolean }> {
     return this.c('page.snapshot', opts)
@@ -234,11 +234,11 @@ export class Tab {
 
   // ---- 标签 ----
   activate() {
-    return this.rsf.call('tab.activate', { id: this.id })
+    return this.seedBrowser.call('tab.activate', { id: this.id })
   }
   close() {
-    this.rsf.forget(this.id)
-    return this.rsf.call('tab.close', { ids: [this.id] })
+    this.seedBrowser.forget(this.id)
+    return this.seedBrowser.call('tab.close', { ids: [this.id] })
   }
 }
 
@@ -254,7 +254,7 @@ export interface ReadOptions {
   via?: string
   links?: boolean
   scroll?: number
-  /** rsf.read(url) 时保留打开的标签（默认读完就关） */
+  /** seedBrowser.read(url) 时保留打开的标签（默认读完就关） */
   keep?: boolean
   /** 只留匹配的段落（带上下文）。字符串按正则、不分大小写：'断货|限购'；也可以传 RegExp */
   grep?: string | RegExp
@@ -262,64 +262,64 @@ export interface ReadOptions {
   context?: number
 }
 
-export type Rsf = ReturnType<typeof createRsf>
+export type SeedBrowser = ReturnType<typeof createSeedBrowser>
 
-export function createRsf(o: RsfOptions = {}) {
+export function createSeedBrowser(o: SeedBrowserOptions = {}) {
   let client: Promise<RpcClient> | null = null
   const cwd = o.cwd || process.cwd()
-  /** 这个进程自己开的标签（rsf.open，或 rsf.tab 没找到而新开的），rsf.cleanup() 时关掉 */
+  /** 这个进程自己开的标签（seedBrowser.open，或 seedBrowser.tab 没找到而新开的），seedBrowser.cleanup() 时关掉 */
   const opened = new Set<string>()
 
-  const rsf = {
+  const seedBrowser = {
     options: o,
-    /** rsf run -f x.js a b 时的 ['a', 'b'] */
+    /** seed-browser run -f x.js a b 时的 ['a', 'b'] */
     args: [] as string[],
-    RsfError,
+    SeedBrowserError,
     rpc(): Promise<RpcClient> {
       return (client ||= RpcClient.connect())
     },
     async call<T = any>(method: string, params: any = {}): Promise<T> {
-      return (await rsf.rpc()).call(method, params)
+      return (await seedBrowser.rpc()).call(method, params)
     },
 
     /**
      * 拿一个标签：
-     *   rsf.tab()                当前标签（-t / RSF_TAB 指定的，或 daemon 的当前标签）
-     *   rsf.tab('t5')            按编号
-     *   rsf.tab('bilibili.com')  复用已打开的、网址匹配的标签（带着登录状态）；没有就后台新开
+     *   seedBrowser.tab()                当前标签（-t / SEED_BROWSER_TAB 指定的，或 daemon 的当前标签）
+     *   seedBrowser.tab('t5')            按编号
+     *   seedBrowser.tab('bilibili.com')  复用已打开的、网址匹配的标签（带着登录状态）；没有就后台新开
      * 第二个参数 { open: 'https://www.bilibili.com' } 指定匹配不到时打开哪个网址（默认 https://<域名>）
      */
     async tab(idOrMatch?: string, opts: { open?: string | false } = {}): Promise<Tab> {
       if (!idOrMatch) {
-        if (o.tab) return new Tab(rsf, o.tab)
-        const cur = await rsf.call('tab.current')
-        if (!cur?.current) throw new RsfError('NO_TAB', '没有当前标签', '用 rsf.tab("t5") / rsf.tab("域名") / rsf.open(url)，或者 rsf run -t t5')
-        return new Tab(rsf, cur.current)
+        if (o.tab) return new Tab(seedBrowser, o.tab)
+        const cur = await seedBrowser.call('tab.current')
+        if (!cur?.current) throw new SeedBrowserError('NO_TAB', '没有当前标签', '用 seedBrowser.tab("t5") / seedBrowser.tab("域名") / seedBrowser.open(url)，或者 seed-browser run -t t5')
+        return new Tab(seedBrowser, cur.current)
       }
-      if (/^t?\d+$/.test(idOrMatch)) return new Tab(rsf, idOrMatch.startsWith('t') ? idOrMatch : 't' + idOrMatch)
+      if (/^t?\d+$/.test(idOrMatch)) return new Tab(seedBrowser, idOrMatch.startsWith('t') ? idOrMatch : 't' + idOrMatch)
       // -t 指定的标签正好匹配，就用它
       if (o.tab) {
-        const url = await rsf.call('page.eval', { tab: o.tab, code: 'location.href' }).then(r => r.value, () => '')
-        if (url && urlMatches(url, idOrMatch)) return new Tab(rsf, o.tab)
+        const url = await seedBrowser.call('page.eval', { tab: o.tab, code: 'location.href' }).then(r => r.value, () => '')
+        if (url && urlMatches(url, idOrMatch)) return new Tab(seedBrowser, o.tab)
       }
       const open = opts.open === false ? undefined : opts.open || (/^https?:\/\//.test(idOrMatch) ? idOrMatch : idOrMatch.includes('*') ? undefined : `https://${idOrMatch}`)
-      const r = await rsf.call('tab.find', { match: idOrMatch, open, browser: o.browser })
-      if (!r) throw new RsfError('NO_TAB', `没有网址匹配 ${idOrMatch} 的标签`, '传 { open: 网址 } 让它自动打开')
+      const r = await seedBrowser.call('tab.find', { match: idOrMatch, open, browser: o.browser })
+      if (!r) throw new SeedBrowserError('NO_TAB', `没有网址匹配 ${idOrMatch} 的标签`, '传 { open: 网址 } 让它自动打开')
       if (!r.reused) opened.add(r.id)
-      return new Tab(rsf, r.id)
+      return new Tab(seedBrowser, r.id)
     },
     /** 后台新开一个标签（不切换当前标签，不抢焦点）。用完记得 tab.close() */
     async open(url: string, opts: { browser?: string; group?: string } = {}): Promise<Tab> {
-      const r = await rsf.call('tab.open', { url, background: true, keep: true, browser: opts.browser || o.browser, group: opts.group })
+      const r = await seedBrowser.call('tab.open', { url, background: true, keep: true, browser: opts.browser || o.browser, group: opts.group })
       opened.add(r.id)
-      return new Tab(rsf, r.id)
+      return new Tab(seedBrowser, r.id)
     },
     /** 关掉这个进程自己开的、还没关的标签（用户原来的标签不动）。返回关掉的编号 */
     async cleanup(): Promise<string[]> {
       const ids = [...opened]
       opened.clear()
-      if (ids.length) await rsf.call('tab.close', { ids }).catch(async () => {
-        for (const id of ids) await rsf.call('tab.close', { ids: [id] }).catch(() => {})
+      if (ids.length) await seedBrowser.call('tab.close', { ids }).catch(async () => {
+        for (const id of ids) await seedBrowser.call('tab.close', { ids: [id] }).catch(() => {})
       })
       return ids
     },
@@ -328,7 +328,7 @@ export function createRsf(o: RsfOptions = {}) {
       opened.delete(id)
     },
     async tabs(filter?: string): Promise<{ id: string; title: string; url: string; browser: string }[]> {
-      return rsf.call('tab.list', { filter, browser: o.browser })
+      return seedBrowser.call('tab.list', { filter, browser: o.browser })
     },
 
     /** 读页面：网址（后台开标签，读完关掉）、Tab、标签编号，或者不传（当前标签） */
@@ -337,11 +337,11 @@ export function createRsf(o: RsfOptions = {}) {
       let temp = false
       if (target instanceof Tab) tab = target
       else if (typeof target === 'string' && /^(https?:\/\/|[\w-]+(\.[\w-]+)+\/)/.test(target)) {
-        tab = await rsf.open(/^https?:/.test(target) ? target : 'https://' + target)
+        tab = await seedBrowser.open(/^https?:/.test(target) ? target : 'https://' + target)
         temp = !opts.keep
-      } else tab = await rsf.tab(target)
+      } else tab = await seedBrowser.tab(target)
       try {
-        const r = await readTab(rsf, tab, opts, cwd)
+        const r = await readTab(seedBrowser, tab, opts, cwd)
         if (!temp) r.tab ??= tab.id
         return r
       } finally {
@@ -349,10 +349,10 @@ export function createRsf(o: RsfOptions = {}) {
       }
     },
 
-    /** 某个域名的函数库：rsf.lib('reddit.com').search('sqlite')。先找完整域名，再找上一级 */
+    /** 某个域名的函数库：seedBrowser.lib('reddit.com').search('sqlite')。先找完整域名，再找上一级 */
     lib(domain: string): Record<string, (...a: any[]) => Promise<any>> {
       const entry = findLib(domain, cwd)
-      if (!entry) throw new RsfError('NO_LIB', `没有 ${domain} 的函数库`, '`rsf lib list` 看有哪些；新写一个放到 ~/.rsf/lib/<域名>.js')
+      if (!entry) throw new SeedBrowserError('NO_LIB', `没有 ${domain} 的函数库`, '`seed-browser lib list` 看有哪些；新写一个放到 ~/.seed-browser/lib/<域名>.js')
       let mod: Promise<Record<string, any>> | null = null
       return new Proxy({} as any, {
         get(_, name) {
@@ -361,7 +361,7 @@ export function createRsf(o: RsfOptions = {}) {
             const m = await (mod ||= importLib(entry))
             if (typeof m[name] !== 'function') {
               const fns = Object.keys(m).filter(k => typeof m[k] === 'function')
-              throw new RsfError('NO_FUNCTION', `${entry.domain} 的函数库里没有 ${name}`, `有：${fns.join(', ') || '(无)'}；看用法：rsf lib list ${entry.domain}`)
+              throw new SeedBrowserError('NO_FUNCTION', `${entry.domain} 的函数库里没有 ${name}`, `有：${fns.join(', ') || '(无)'}；看用法：seed-browser lib list ${entry.domain}`)
             }
             return m[name](...args)
           }
@@ -375,15 +375,15 @@ export function createRsf(o: RsfOptions = {}) {
       client?.then(c => c.close(), () => {})
     },
   }
-  // 函数库里的代码直接用全局的 rsf / RsfError，不用 import
+  // 函数库里的代码直接用全局的 seedBrowser / SeedBrowserError，不用 import
   if (o.global !== false) {
-    ;(globalThis as any).rsf = rsf
-    ;(globalThis as any).RsfError = RsfError
+    ;(globalThis as any).seedBrowser = seedBrowser
+    ;(globalThis as any).SeedBrowserError = SeedBrowserError
   }
-  return rsf
+  return seedBrowser
 }
 
-/** 函数列表（rsf read 末尾附上，让 AI 知道这个网站还能干什么） */
+/** 函数列表（seed-browser read 末尾附上，让 AI 知道这个网站还能干什么） */
 function libSummary(file: string, domain: string) {
   try {
     const info = libInfo({ domain, file, scope: '' })
@@ -394,9 +394,9 @@ function libSummary(file: string, domain: string) {
   }
 }
 
-async function readTab(rsf: Rsf, tab: Tab, o: ReadOptions, cwd: string) {
-  if (o.grep !== undefined && o.grep !== '') return applyGrep(await readTabRaw(rsf, tab, { ...o, mode: 'full', budget: 1e7, offset: undefined }, cwd), o)
-  return readTabRaw(rsf, tab, o, cwd)
+async function readTab(seedBrowser: SeedBrowser, tab: Tab, o: ReadOptions, cwd: string) {
+  if (o.grep !== undefined && o.grep !== '') return applyGrep(await readTabRaw(seedBrowser, tab, { ...o, mode: 'full', budget: 1e7, offset: undefined }, cwd), o)
+  return readTabRaw(seedBrowser, tab, o, cwd)
 }
 
 /** grep 后处理：正文按段落 / 句子过滤，列表按条目过滤 */
@@ -423,12 +423,12 @@ function applyGrep(res: any, o: ReadOptions) {
     blocks: g.matches.length,
     of: `${g.total} 字`,
     ...(g.truncated ? { truncated: `超出 ${o.budget || 6000} 字预算，后面的匹配没显示；加 --budget 或把关键词写得更窄` } : {}),
-    ...(g.matches.length ? { tip: '〔@数字〕是这一块在全文里的位置，rsf read --offset 数字 从那里接着读' } : {}),
+    ...(g.matches.length ? { tip: '〔@数字〕是这一块在全文里的位置，seed-browser read --offset 数字 从那里接着读' } : {}),
   }
   return res
 }
 
-async function readTabRaw(rsf: Rsf, tab: Tab, o: ReadOptions, cwd: string) {
+async function readTabRaw(seedBrowser: SeedBrowser, tab: Tab, o: ReadOptions, cwd: string) {
   const url = await tab.url()
   const mode = o.mode || (o.brief ? 'brief' : o.full ? 'full' : 'default')
   const warnings: string[] = []
@@ -453,8 +453,8 @@ async function readTabRaw(rsf: Rsf, tab: Tab, o: ReadOptions, cwd: string) {
       } catch (e: any) {
         warnings.push(`${entry.domain} 的 read() 出错（${e.code && e.code !== 'ERROR' ? e.code + ' ' : ''}${String(e.message).slice(0, 200)}），改用通用提取`)
       }
-    } else if (o.via === 'lib') throw new RsfError('NO_READ', `${entry.domain} 的函数库没有 read()`)
-  } else if (o.via === 'lib') throw new RsfError('NO_LIB', `${hostOf(url)} 没有函数库`)
+    } else if (o.via === 'lib') throw new SeedBrowserError('NO_READ', `${entry.domain} 的函数库没有 read()`)
+  } else if (o.via === 'lib') throw new SeedBrowserError('NO_LIB', `${hostOf(url)} 没有函数库`)
 
   const res = await tab.c('page.read', { mode, section: o.section, offset: o.offset, limit: o.limit, budget: o.budget, via: generic ? o.via : undefined, links: o.links, scroll: o.scroll })
   if (warnings.length) res.warnings = [...(res.warnings || []), ...warnings]
@@ -463,4 +463,4 @@ async function readTabRaw(rsf: Rsf, tab: Tab, o: ReadOptions, cwd: string) {
 }
 
 export type { LibFn }
-export { urlMatches, RsfError, sleep }
+export { urlMatches, SeedBrowserError, sleep }
